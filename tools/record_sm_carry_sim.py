@@ -40,6 +40,7 @@ def frame_window(display, screenshot):
 def main():
     p=argparse.ArgumentParser();p.add_argument('--assets',required=True,type=Path);p.add_argument('--output',required=True,type=Path)
     p.add_argument('--display',default=':93');p.add_argument('--startup-delay',type=float,default=6.)
+    p.add_argument('--staged',action='store_true')
     a=p.parse_args();assets=a.assets.resolve();out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
     if (out/'result.json').exists():raise RuntimeError('Choose a new output directory')
     env=os.environ.copy();env['DISPLAY']=a.display;env['ROS_LOG_DIR']=str(out/'ros_logs')
@@ -54,9 +55,10 @@ def main():
         if xvfb.poll() is not None:raise RuntimeError('Xvfb failed; select an unused display')
         video=launch(['ffmpeg','-y','-loglevel','warning','-f','x11grab','-framerate','25','-video_size','1280x800','-i',a.display,
                       '-c:v','libx264','-preset','ultrafast','-crf','22','-pix_fmt','yuv420p',str(out/'raw_capture.mp4')],'ffmpeg')
-        observer=launch(['/usr/bin/python3',str(Path(__file__).with_name('sm_carry_observe.py')),'--output',str(out)],'observer')
+        observer=launch(['/usr/bin/python3',str(Path(__file__).with_name('sm_carry_observe.py')),'--output',str(out)]
+                        + (['--staged'] if a.staged else []),'observer')
         sim=launch(['ros2','launch','motion_tracking_controller','sm_carry_mujoco.launch.py',f'assets:={assets}',
-                    f'controller_start_delay:={a.startup_delay}'],'simulation')
+                    f'controller_start_delay:={a.startup_delay}',f'staged_start:={str(a.staged).lower()}'],'simulation')
         time.sleep(3)
         if sim.poll() is not None:raise RuntimeError('ROS launch exited; inspect simulation.log')
         try:frame_window(a.display,out/'initial_view.png')

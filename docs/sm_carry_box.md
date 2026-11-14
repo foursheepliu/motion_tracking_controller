@@ -20,8 +20,9 @@ NPZ data prepared into JSON, rather than the original controller's ONNX motion o
 - PD gains are the nominal mjlab G1 10 Hz / damping-ratio-2 profile. All 29 exported action
   scales are checked against `0.25 * effort_limit / kp`. The bundle does not independently
   export nominal PD. This inference is documented and **not hardware verified**.
-- `sm_carry_mujoco.launch.py` only creates a MuJoCo backend. There is no SM real launch
-  in this branch. The original `real.launch.py` still targets the original controller.
+- `sm_carry_mujoco.launch.py` only creates a MuJoCo backend. The separate
+  `sm_carry_real.launch.py` now supplies an operator-gated hardware entry point.
+  The original `real.launch.py` still targets the original controller.
 
 ## NUC 上的目录
 
@@ -44,6 +45,7 @@ on the NUC; source, launch files, preparation and verification tools are version
 | --- | --- | --- | --- | --- |
 | `hold203_v1` | 5.62 s | 8.62 s | 0.0990 rad | 1.43 / 2.61 ms |
 | `full203_v1` | 16.34 s | 19.34 s | 0.1150 rad | 1.51 / 3.12 ms |
+| `full203_neutral_staged` | 16.34 s | 19.34 s | 0.1185 rad | 2.67 / 7.37 ms |
 
 Both recordings completed their reference plus end holding. Inspection of sampled video
 frames showed squatting, standing and carry-pose tracking without falling; `full203`
@@ -55,6 +57,10 @@ the total path length. Full inference maximum was 11.05 ms, below the 20 ms poli
 
 Machine-readable results are in [validation](validation/). Recordings and complete traces
 are in the corresponding `~/sm_carry_box_ws/results_sm_carry/` directories on the NUC.
+The additional `full203_neutral_staged` run starts in the original neutral standby and
+uses the operator guard to switch into carry; it also completed the reference and end hold.
+Its input parity maximum was `2.73e-8`, previous-action error zero, and maximum policy
+interval deviation 2 ms during switching. It does not initialize directly at reference q.
 
 ## Build / dependency setup
 
@@ -185,10 +191,64 @@ At reference end, future lookup clamps to the last frame (including its stored v
 It does not loop and does not automatically switch into damping. Continued upright
 behavior must be checked from the recording; an end-frame clamp is not a stability guarantee.
 
-## Before a later sim2real adaptation
+## Hardware validation boundary
 
-The remaining engineering work includes confirming actual training PD/model/contact
-parameters, testing the standby-to-first-reference transition, integrating the SM plugin
-into an explicitly reviewed real FSM, checking live state freshness and logging, and
-separately validating payload/contact behavior. None of those hardware results is claimed
-by the current sim2sim test.
+The neutral-standby-to-carry transition and operator guard are now tested in simulation;
+the hardware entry point and watchdogs are implemented below. Actual loaded-box behavior,
+training model/contact equivalence and real carry tracking remain unverified. A reference
+first-frame joint pose is not a static balance controller: using it as standby fell in a
+free-standing simulation, so the staged entry uses the original neutral standby instead.
+
+## Staged G1 real entry point
+
+The G1 deployment is separate from the old walking workspace, at
+`/home/unitree/sm_carry_box_ws`, in container `g1-carry-real`, ROS domain 97.
+It uses the built ARM64 image `qiayuanl/unitree:g1-carry-arm64-20261114`.
+The offline native probe must pass on that machine before starting hardware.
+
+```bash
+bash ~/sm_carry_box_ws/src/motion_tracking_controller/tools/start_sm_carry_g1.sh
+docker logs --tail 80 g1-carry-real
+```
+
+Startup loads all controllers inactive, configures/activates the hardware, then activates
+**only the state estimator**. Motor controllers stay inactive until the operator acts.
+Real tracking is **disabled by default**. Ground walking and squatting require ground
+support. An operator-authorized suspended motion-only check can enable the full reference,
+but is not evidence of ground walking or box manipulation. After the remote has sent
+a neutral button state:
+
+- `B`: deactivate both motor controllers (passive damping behavior from the hardware).
+- `L1+A`: enter the original, previously used neutral standby pose and its ramp.
+- `R1+A`: rejected while tracking is disabled. Once ground support has been confirmed and
+  the entry point deliberately launched with `enable_tracking:=true`, it runs the full
+  817-frame / 16.34 s reference after at least 2.5 s in standby.
+
+There is **no 1-second duration cap** and no automatic damping at reference completion;
+the lookup continues clamping to the final frame. B, stale-state/remote/policy watchdogs,
+or a large gravity-direction deviation from the current reference stop the motor
+controllers. Tracking is rejected if any joint differs from neutral standby by more than
+0.20 rad, any joint differs from reference frame 0 by more than 0.60 rad, the initial
+pelvis gravity direction differs from the reference by more than 0.35, the sticks are
+displaced, or feedback is stale. B → neutral → prepare
+allows another operator-triggered run. The guard exiting also requests controller stop.
+
+The guard uses a 0.10 s joint-feedback timeout, 0.30 s remote timeout and 0.15 s policy
+telemetry timeout. These are additional ROS-level checks, not substitutes for raw SDK
+receive timeout checks or a physical emergency stop. Operator events and full policy
+observations/actions are saved under `real_carry/<timestamp>/operator_and_policy.jsonl`.
+The hardware wrapper defaults to `SM_CARRY_ENABLE_TRACKING=false`; changing this to true
+requires an explicitly chosen test setup and operator authorization. A suspended test
+may stop on reference-orientation deviation because its contact conditions differ from
+training; do not remove the watchdog to force reference completion.
+
+ARM64 offline validation matched the supplied ONNX fixture to `7.75e-7` max action error;
+single-thread CPU inference was approximately 2.95 ms median / 3.01 ms p95.
+The carry PD gains match the previously deployed walking model to less than `0.0005`
+(its metadata is rounded to three decimals). This is a deployment-parameter cross-check,
+not proof that the new policy behaves safely on hardware or can manipulate a loaded box.
+
+For a staged simulation of this same operator guard, use `staged_start:=true` in the
+simulation launch, or `--staged` with `record_sm_carry_sim.py`. Test joystick injection
+must be restricted to an isolated simulation ROS domain and checked against
+`controller_manager.use_sim_time=true` before publishing any input.

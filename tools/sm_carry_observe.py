@@ -14,7 +14,7 @@ from std_msgs.msg import Float64MultiArray
 
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('--output',required=True);a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('--output',required=True);p.add_argument('--staged',action='store_true');a=p.parse_args()
     out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
     rclpy.init();n=Node('sm_carry_sim_observer');debug=[];ground=[];start=time.monotonic()
     trace=(out/'trace.jsonl').open('w')
@@ -36,7 +36,9 @@ def main():
     finally:
         trace.close();d=np.asarray(debug);g=np.asarray(ground)
         result={'policy_samples':len(debug),'ground_truth_samples':len(ground),'wall_seconds':time.monotonic()-start,
-                'scope':'Native ROS2 C++ controller in MuJoCo, reference-first-pose initialization, zero initial velocity; no physical box; no hardware test'}
+                'scope':('Native ROS2 C++ controller in MuJoCo, neutral standby to carry transition' if a.staged else
+                         'Native ROS2 C++ controller in MuJoCo, reference-first-pose initialization, zero initial velocity')
+                        + '; no physical box; no hardware test'}
         if len(d):
             obs=d[:,11:744];actions=d[:,744:773]
             result.update(first_step=int(d[0,0]),last_step=int(d[-1,0]),reference_frames=int(d[-1,3]),

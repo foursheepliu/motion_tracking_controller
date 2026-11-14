@@ -1,0 +1,24 @@
+{
+  "policy_samples": 968,
+  "ground_truth_samples": 1324,
+  "wall_seconds": 51.28168462899339,
+  "scope": "Native ROS2 C++ controller in MuJoCo, neutral standby to carry transition; no physical box; no hardware test",
+  "first_step": 0,
+  "last_step": 967,
+  "reference_frames": 817,
+  "policy_elapsed_sim_seconds": 19.344000001,
+  "finite": true,
+  "min_estimated_pelvis_height": 0.49660558102752533,
+  "last_estimated_pelvis_height": 0.7787080683102431,
+  "max_abs_raw_action": 6.885812759399414,
+  "max_abs_joint_velocity": 5.68297442335777,
+  "inference_ms": {
+    "median": 2.668913,
+    "p95": 7.37189105,
+    "max": 15.37888
+  },
+  "previous_action_max_error": 0.0,
+  "min_mid360_height": 0.6379652699418734,
+  "last_mid360_height": 1.2293174055670664,
+  "horizontal_sensor_displacement": 2.2047413926191295
+}

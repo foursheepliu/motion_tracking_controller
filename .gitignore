@@ -6,6 +6,8 @@ log/
 .venv/
 assets_sm_carry/
 results_sm_carry/
+real_carry/
+latest_real_carry_run.txt
 *.onnx
 *.pt
 *.npz

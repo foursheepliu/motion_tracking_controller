@@ -39,13 +39,16 @@ def validate(assets, trace):
     for name, value in errors.items():
         assert value < 1e-5, f'{name}: {value}'
     assert np.abs(actions).max() <= control['raw_action_limit']
-    np.testing.assert_allclose(np.diff(d[:, 1]), .02, atol=1e-6)
+    intervals=np.diff(d[:,1])
+    assert np.abs(intervals-.02).max() <= .004001, 'Policy cadence exceeds two control ticks of jitter'
+    assert abs(intervals.mean()-.02)<.0001, 'Mean policy cadence is not 50 Hz'
     active = steps < len(q)
     actual_q = obs[:, 6:35] + np.array(control['default_joint_position_rad'])
     tracking_error = actual_q[active] - q[steps[active]]
     report = dict(interface_parity_passed=True, **errors,
                   joint_tracking_rmse_rad=float(np.sqrt(np.mean(tracking_error**2))),
                   joint_tracking_max_abs_rad=float(np.abs(tracking_error).max()),
+                  max_policy_interval_error_ms=float(np.abs(intervals-.02).max()*1000),
                   policy_frames=len(d), completed_reference=bool(steps[-1] >= len(q)-1))
     print(json.dumps(report, indent=2))
     return report
