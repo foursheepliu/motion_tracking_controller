@@ -63,6 +63,38 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def deployment_profile(bundle, contract):
+    profile = nominal_g1_profile(contract['joint_names'], contract['action_scale'])
+    path = bundle/'deployment-config.json'
+    if not path.exists():
+        return profile
+    exported = json.loads(path.read_text())
+    assert exported['joint_order'] == contract['joint_names'], 'Deployment joint order mismatch'
+    assert exported['policy_frequency_hz'] == 50 and exported['reference_fps'] == 50
+    assert exported['raw_action_limit'] == contract['raw_action_limit']
+    for key in ['action_scale','default_joint_position_rad']:
+        np.testing.assert_allclose(exported[key],contract[key],rtol=0,atol=1e-8)
+    for key in ['kp','kd']:
+        value=np.asarray(exported[key],dtype=float)
+        assert value.shape == (29,) and np.isfinite(value).all() and (value>0).all()
+        profile[key]=value.tolist()
+    limits=np.asarray(exported['effort_limits_nm'],dtype=float)
+    assert limits.shape==(29,2) and np.isfinite(limits).all()
+    assert (limits[:,0]<0).all() and (limits[:,1]>0).all()
+    # Preserve the compiled training model's per-joint limits, not the raw-action clamp.
+    profile['effort_limits_nm']=limits.tolist()
+    profile['effort_limit']=np.max(np.abs(limits),axis=1).tolist()
+    nominal=json.loads((bundle/'nominal-actuators.json').read_text())
+    by_name={item['joint_name']:item for item in nominal['actuators']}
+    for index,name in enumerate(contract['joint_names']):
+        for key in ['kp','kd']:
+            assert math.isclose(by_name[name][key],profile[key][index],rel_tol=1e-9)
+        np.testing.assert_allclose(by_name[name]['effort_limit_nm'],limits[index],rtol=0,atol=1e-9)
+    profile['pd_provenance']='Supplied deployment-config.json, checked against nominal-actuators.json; not hardware verified'
+    profile['deployment_config_sha256']=sha(path)
+    return profile
+
+
 def prepare(bundle, reference, output):
     bundle,reference,output = Path(bundle).resolve(),Path(reference).resolve(),Path(output).resolve()
     contract = json.loads((bundle/'onnx-contract.json').read_text())
@@ -80,7 +112,7 @@ def prepare(bundle, reference, output):
         root_vel=data['body_lin_vel_w'][0,0].astype(float);root_avel=data['body_ang_vel_w'][0,0].astype(float)
     for value in [q,qd,quat,pos,root_vel,root_avel]:assert np.isfinite(value).all()
     assert q.shape==qd.shape and q.shape[1]==29 and len(q)==len(quat)==len(pos)>0
-    control=dict(contract,**nominal_g1_profile(names,contract['action_scale']))
+    control=dict(contract,**deployment_profile(bundle,contract))
     reference_data=dict(joint_names=names,fps=50.,offset_frames=list(range(0,50,5)),
                         joint_pos=q.tolist(),joint_vel=qd.tolist(),pelvis_quat_wxyz=quat.tolist())
     startup={'mujoco_sim_ros2_node':{'ros__parameters':{

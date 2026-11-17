@@ -1,5 +1,38 @@
 # SuperMimic carry policy — NUC sim2sim
 
+## 2026-11-17 smooth-ft bundle
+
+`carry-s2r-proprio-v1-smooth-ft` uses the same 733 → 29 interface, normalization convention,
+joint order, 50 Hz cadence, KP/KD, defaults and action scale as the original bundle. The
+C++ controller needs no interface changes. Replace the actor and references together.
+`prepare_sm_carry.py` now reads the explicit `deployment-config.json`, cross-checks its
+PD/limits against `nominal-actuators.json`, and preserves the exported force limits in
+generated MuJoCo joint settings. Legacy bundles without these files retain the old fallback.
+The original ONNX is unchanged: control and reference JSON remain external runtime assets.
+
+NUC data is in `~/sm_carry_box_ws/data/carry-s2r-proprio-v1-smooth-ft`; prepared clips are
+`assets_sm_carry/smooth_ft_{203,204,206,207}`, with 644 / 490 / 587 / 416 frames.
+The desktop shortcut **SM Smooth FT 仿真** opens clip 203 in the local graphical session.
+Close an existing MuJoCo session first; no Xvfb or remote video is required.
+
+```bash
+bash ~/sm_carry_box_ws/src/motion_tracking_controller/tools/run_sm_carry_smooth_gui.sh 203
+# Choose 204, 206 or 207 to inspect another prepared reference.
+```
+
+The first visible clip-203 rollout completed its 12.88 s reference, but fell during the
+subsequent final-frame hold. Gravity-direction error stayed below 7.34 degrees during the
+reference, crossed 15 degrees at policy time 13.92 s, and crossed 30 degrees at 14.06 s.
+This single rollout is not a general behavior-success claim. The exported last frame has
+joint-velocity norm 3.18 rad/s and nonzero pelvis linear/angular velocity; repeating it
+does not define a static standing target. That is a plausible end-hold failure contributor,
+not a verified causal diagnosis. Do not interpret successful numerical checks as hardware
+readiness. See the recorded `gui_smooth_ft_203_20261117_091340` results on the NUC.
+
+Native probe: max action error 0 against the supplied smoke example; median inference
+1.41 ms. Runtime goal error was below `4e-15`, previous-action error zero. No G1 hardware
+was accessed for this update.
+
 `sm_carry_box` adds `motion_tracking_controller/SmCarryController`, alongside the original
 BeyondMimic controller. It reuses `legged_control2`'s ROS2 control, state estimator, joint
 mapping, observation terms and ONNX CPU backend. Reference motion comes from external

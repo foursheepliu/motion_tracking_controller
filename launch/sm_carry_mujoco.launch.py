@@ -48,9 +48,13 @@ def setup(context):
     ET.SubElement(world, 'camera', name='sm_carry_follow', mode='trackcom',
                   pos='1.8 -2.4 1.5', xyaxes='0.8 0.6 0 -0.12 0.16 0.98')
     armatures = dict(zip(control['joint_names'],control['armature']))
+    efforts = dict(zip(control['joint_names'],control.get('effort_limits_nm',[])))
     for joint in world.iter('joint'):
         if joint.get('name') in armatures:
             joint.set('armature', str(armatures[joint.get('name')]))
+        if joint.get('name') in efforts:
+            joint.set('actuatorfrclimited','true')
+            joint.set('actuatorfrcrange',' '.join(str(x) for x in efforts[joint.get('name')]))
     model_xml = assets/'sim.generated.xml'
     tree.write(model_xml)
     model_file = '/'+os.path.relpath(model_xml,description)
