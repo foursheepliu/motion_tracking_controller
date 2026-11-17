@@ -275,6 +275,32 @@ requires an explicitly chosen test setup and operator authorization. A suspended
 may stop on reference-orientation deviation because its contact conditions differ from
 training; do not remove the watchdog to force reference completion.
 
+### Selecting the smooth-ft reference on G1
+
+The wrapper accepts `SM_CARRY_ASSET=smooth_ft_203`, `smooth_ft_204`, `smooth_ft_206`, or
+`smooth_ft_207`. Its default remains `full203` for compatibility with the original deployment.
+The selected directory must already be present in `~/sm_carry_box_ws/assets_sm_carry`.
+Each run saves its choice in `real_carry/<timestamp>/selected_asset.txt`.
+
+```bash
+# After stopping the old trial and preserving/stopping its container:
+SM_CARRY_ASSET=smooth_ft_206 SM_CARRY_ENABLE_TRACKING=true \
+  bash ~/sm_carry_box_ws/src/motion_tracking_controller/tools/start_sm_carry_g1.sh
+```
+
+This starts only the state estimator; the operator uses L1+A then R1+A after preparation.
+Do not run a second controller container to change references. Press B, confirm both motor
+controllers inactive, stop the current program, and restart using the chosen asset set.
+The original full-duration / final-frame-hold behavior remains; no experimental return-to-
+standby plugin or synthetic tail is used. The smooth-ft end holds fell in simulation.
+
+All four asset sets passed native ARM64 numerical probes on 2026-11-17: max action
+error `3.88e-7`, median inference approximately 3 ms. Preparing assets does not establish
+that every reference can enter tracking from the current neutral standby. In particular,
+smooth-ft 207's first right-elbow target differs from neutral by approximately 0.825 rad,
+exceeding the existing 0.60 rad start gate. It is stored for separate preparation/transition
+validation; this gate has not been loosened. The initial selection is smooth-ft 206.
+
 ARM64 offline validation matched the supplied ONNX fixture to `7.75e-7` max action error;
 single-thread CPU inference was approximately 2.95 ms median / 3.01 ms p95.
 The carry PD gains match the previously deployed walking model to less than `0.0005`
